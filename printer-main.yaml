@@ -44,8 +44,9 @@ wifi:
   # Set static ip address for connection
   manual_ip:
    static_ip: ${pm_ip}
-   gateway: 192.168.10.1
-   subnet: 255.255.254.0
+   gateway: ${gateway}
+   subnet: ${subnet}
+   dns1: ${dns1}
 
 # Configure captive portal in case of no WiFi connection
 captive_portal:
@@ -168,7 +169,7 @@ sensor:
     lambda: |-
       { return id(hlw8012_pwr).state / (id(hlw8012_volt).state * id(hlw8012_cur).state); }
     update_interval: 5s
-    
+
   - platform: total_daily_energy
     name: "${pm_friendly_name} Total Daily Energy"
     power_id: hlw8012_pwr
