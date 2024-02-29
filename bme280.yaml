@@ -1,3 +1,4 @@
+# Define constant variables for use throughout configuration
 substitutions:
   name: "bme280"
   friendly_name: "BME 280"
@@ -6,6 +7,7 @@ substitutions:
   project_name: "bme.sensor"
   project_version: "1.0"
 
+# Set up device parameters
 esphome:
   name: "${name}"
   friendly_name: "${friendly_name}"
@@ -14,6 +16,7 @@ esphome:
     name: "${project_name}"
     version: "${project_version}"
 
+# Configure device type and framework
 esp32:
   board: esp32dev
   framework:
@@ -29,9 +32,11 @@ api:
   encryption:
     key: !secret bme_api
 
+# Enable OTA updates & create password
 ota:
   password: !secret bme_ota
 
+# Enable WiFi and passwords
 wifi:
   networks:
     - ssid: !secret wifi_ssid
@@ -54,23 +59,27 @@ wifi:
       
   # use_address: 
 
+# Configure captive portal in case of no WiFi connection
 captive_portal:
 
+# Enable web server component
 web_server:
   port: 80
 
+# Enable i2c and configure pins
 i2c:
   sda: 21
   scl: 22
   scan: true
 
+# Register the blue LED as an output, and define gpio pin
 output:
-  # Register the blue LED as a dimmable output ....
   - platform: gpio
     id: blue_led
     pin: 2
     inverted: True  # Configure so LED is ON during boot, and is OFF when WiFi connected
 
+# Check to see if WiFi connected, and switch on the output for the blue LED
 interval:
   - interval: 1s
     then:
@@ -82,6 +91,7 @@ interval:
         else:
           - output.turn_off: blue_led
 
+# Configure BME280 i2c sensor, define oversampling, and address.
 sensor:
   - platform: bme280_i2c
     temperature:
@@ -98,11 +108,13 @@ sensor:
     update_interval: 15s
     iir_filter: 16x
 
+# Enable absolute humidity calculation
   - platform: absolute_humidity
     name: "2 Absolute Humidity"
     temperature: bme280_temperature
     humidity: bme280_humidity
 
+# Calculate dew point
   - platform: template
     name: "3 Dew Point"
     lambda: |-
@@ -112,6 +124,7 @@ sensor:
     unit_of_measurement: °C
     icon: 'mdi:thermometer-alert'
 
+# Calculate MSLP
   - platform: template
     name: "5 Equivalent sea level pressure"
     lambda: |-
@@ -121,6 +134,7 @@ sensor:
     update_interval: 15s
     unit_of_measurement: 'hPa'
 
+# FIlter values of the humidity sensor to provide calibration
   - platform: copy
     source_id: bme280_humidity_raw
     name: "1 Relative Humidity"
@@ -137,13 +151,15 @@ sensor:
     unit_of_measurement: "%"
     device_class: "humidity"
 
-  - platform: wifi_signal # Reports the WiFi signal strength/RSSI in dB
+# Reports the WiFi signal strength/RSSI in dB
+  - platform: wifi_signal 
     name: "WiFi Signal dB"
     id: wifi_signal_db
     update_interval: 60s
     entity_category: "diagnostic"
 
-  - platform: copy # Reports the WiFi signal strength in %
+# Reports the WiFi signal strength in %
+  - platform: copy 
     source_id: wifi_signal_db
     name: "WiFi Signal Percent"
     filters:
@@ -151,7 +167,7 @@ sensor:
     unit_of_measurement: "Signal %"
     entity_category: "diagnostic"
     device_class: ""
-
+# Reports WiFi info, IP address, and WiFi scan results
 text_sensor:
   - platform: wifi_info
     ip_address:
