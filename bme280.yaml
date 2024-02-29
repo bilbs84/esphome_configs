@@ -1,0 +1,216 @@
+substitutions:
+  name: "bme280"
+  friendly_name: "BME 280"
+  room: "Bedroom"
+  device_description: "BME280 based environmental sensor with DHT22 support"
+  project_name: "bme.sensor"
+  project_version: "1.0"
+
+esphome:
+  name: "${name}"
+  friendly_name: "${friendly_name}"
+  name_add_mac_suffix: false
+  project:
+    name: "${project_name}"
+    version: "${project_version}"
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+  logs:
+    component: ERROR
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: !secret bme_api
+
+ota:
+  password: !secret bme_ota
+
+wifi:
+  networks:
+    - ssid: !secret wifi_ssid
+      password: !secret wifi_password
+    - ssid: "BielbyHome"
+      password: !secret wifi2_password
+    - ssid: "Lyons WiFi"
+      password: !secret lyons_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Bme280 Fallback Hotspot"
+    password: !secret bme_ap
+
+  # manual_ip:
+  #   static_ip: !secret bme_ip
+  #   subnet: !secret subnet
+  #   gateway: !secret gateway
+  #   dns1: !secret dns1
+      
+  # use_address: 
+
+captive_portal:
+
+web_server:
+  port: 80
+
+i2c:
+  sda: 21
+  scl: 22
+  scan: true
+
+output:
+  # Register the blue LED as a dimmable output ....
+  - platform: gpio
+    id: blue_led
+    pin: 2
+    inverted: True  # Configure so LED is ON during boot, and is OFF when WiFi connected
+
+interval:
+  - interval: 1s
+    then:
+      if:
+        condition:
+          wifi.connected:
+        then:
+          - output.turn_on: blue_led
+        else:
+          - output.turn_off: blue_led
+
+sensor:
+  - platform: bme280_i2c
+    temperature:
+      name: "0 Temperature"
+      oversampling: 16x
+      id: bme280_temperature
+    pressure:
+      name: "4 Atmostpheric Pressure"
+      id: bme280_pressure
+    humidity:
+      name: "Relative Humidity"
+      id: bme280_humidity_raw
+    address: 0x77
+    update_interval: 15s
+    iir_filter: 16x
+
+  - platform: absolute_humidity
+    name: "2 Absolute Humidity"
+    temperature: bme280_temperature
+    humidity: bme280_humidity
+
+  - platform: template
+    name: "3 Dew Point"
+    lambda: |-
+      return (243.5*(log(id(bme280_humidity).state/100)+((17.67*id(bme280_temperature).state)/
+      (243.5+id(bme280_temperature).state)))/(17.67-log(id(bme280_humidity).state/100)-
+      ((17.67*id(bme280_temperature).state)/(243.5+id(bme280_temperature).state))));
+    unit_of_measurement: °C
+    icon: 'mdi:thermometer-alert'
+
+  - platform: template
+    name: "5 Equivalent sea level pressure"
+    lambda: |-
+      const float STANDARD_ALTITUDE = 61; // in meters, see note
+      return id(bme280_pressure).state / powf(1 - ((0.0065 * STANDARD_ALTITUDE) /
+        (id(bme280_temperature).state + (0.0065 * STANDARD_ALTITUDE) + 273.15)), 5.257); // in hPa
+    update_interval: 15s
+    unit_of_measurement: 'hPa'
+
+  - platform: copy
+    source_id: bme280_humidity_raw
+    name: "1 Relative Humidity"
+    id: bme280_humidity
+    filters:
+        - calibrate_linear:
+            method: exact
+            datapoints:
+              - 0 -> 0
+              - 47.5 -> 55.5
+        - exponential_moving_average:
+            alpha: 0.2
+            send_every: 5
+    unit_of_measurement: "%"
+    device_class: "humidity"
+
+  # - platform: dht
+  #   pin: 4
+  #   temperature:
+  #     name: "7 DHT22 Temperature Uncorrected"
+  #     id: dht_temp
+  #   humidity:
+  #     name: "9 DHT22 Humid Uncorrected"
+  #     id: dht_humid
+  #     accuracy_decimals: 1
+  #     filters:
+  #       - exponential_moving_average:
+  #           alpha: 0.2
+  #           send_every: 5
+  #   update_interval: 3s
+  #   model: DHT22
+  # - platform: copy
+  #   source_id: dht_humid
+  #   name: "8 DHT22 Humidity"
+  #   id: dht_humidity
+  #   filters:
+  #       - calibrate_polynomial:
+  #           degree: 3
+  #           datapoints:
+  #             - 49 -> 39
+  #             - 51.1 -> 39.8
+  #             - 52 -> 41
+  #             - 53.2 -> 44.5
+  #             - 63 -> 55
+  #             - 65.6 -> 59.5
+  #       - exponential_moving_average:
+  #           alpha: 0.2
+  #           send_every: 5
+  #   unit_of_measurement: "%"
+  #   device_class: "humidity"
+  # - platform: copy
+  #   source_id: dht_temp
+  #   name: "6 DHT Temperature"
+  #   id: dht_temperature
+  #   filters:
+  #     calibrate_linear:
+  #       method: exact
+  #       datapoints:
+  #         - 0 -> 0
+  #         - 20.5 -> 19.8
+  #         - 24.2 -> 22.9
+  #         - 24.8 -> 24.3
+  #         - 25.2 -> 24.6
+  #         - 26.1 -> 24.8
+  #         - 27.4 -> 26.3
+  #   unit_of_measurement: "°C"
+  #   device_class: temperature
+
+  - platform: wifi_signal # Reports the WiFi signal strength/RSSI in dB
+    name: "WiFi Signal dB"
+    id: wifi_signal_db
+    update_interval: 60s
+    entity_category: "diagnostic"
+
+  - platform: copy # Reports the WiFi signal strength in %
+    source_id: wifi_signal_db
+    name: "WiFi Signal Percent"
+    filters:
+      - lambda: return min(max(2 * (x + 100.0), 0.0), 100.0);
+    unit_of_measurement: "Signal %"
+    entity_category: "diagnostic"
+    device_class: ""
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: IP Address
+    ssid:
+      name: Connected SSID
+    mac_address:
+      name: Mac Wifi Address
+    scan_results:
+      name: Latest Scan Results
