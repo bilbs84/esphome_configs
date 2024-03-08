@@ -144,7 +144,7 @@ sensor:
     id: bme280_humidity
     filters:
         - calibrate_linear:
-            method: exact
+            # method: exact
             datapoints:
               - 0 -> 0
               - 48 -> 55
