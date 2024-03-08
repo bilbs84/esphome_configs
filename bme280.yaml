@@ -45,12 +45,15 @@ wifi:
       password: !secret wifi2_password
     - ssid: "Lyons WiFi"
       password: !secret lyons_password
+    - ssid: "tcag"
+      password: !secret tcag_password
 
   # Enable fallback hotspot (captive portal) in case wifi connection fails
   ap:
     ssid: "Bme280 Fallback Hotspot"
     password: !secret bme_ap
 
+  domain: .local
   # manual_ip:
   #   static_ip: !secret bme_ip
   #   subnet: !secret subnet
@@ -144,7 +147,9 @@ sensor:
             method: exact
             datapoints:
               - 0 -> 0
-              - 47.5 -> 55.5
+              - 48 -> 55
+              - 49 -> 57
+              - 55.2 -> 64
         - exponential_moving_average:
             alpha: 0.2
             send_every: 5
