@@ -22,6 +22,7 @@ esp32:
   framework:
     type: arduino
 
+
 # Enable logging
 logger:
   # logs:
@@ -30,8 +31,8 @@ logger:
 # Enable Home Assistant API
 api:
   encryption:
-    # key: !secret bme_api
-    key: "bx2Gbs8/52PllLHnk7wqRmEaQz4gDJWxoGvw+GYJ3a8="
+    key: !secret bme_api
+    # key: "bx2Gbs8/52PllLHnk7wqRmEaQz4gDJWxoGvw+GYJ3a8="
 
 # Enable OTA updates & create password
 ota:
@@ -40,12 +41,12 @@ ota:
 # Enable WiFi and passwords
 wifi:
   networks:
-    # - ssid: !secret wifi_ssid
-    #   password: !secret wifi_password
-    # - ssid: "BielbyHome"
-    #   password: !secret wifi2_password
-    # - ssid: "Lyons WiFi"
-    #   password: !secret lyons_password
+    - ssid: !secret wifi_ssid
+      password: !secret wifi_password
+    - ssid: "BielbyHome"
+      password: !secret wifi2_password
+    - ssid: "Lyons WiFi"
+      password: !secret lyons_password
     - ssid: "tcag"
       password: "X10ten10"
       # password: !secret tcag_password
@@ -95,6 +96,10 @@ interval:
           - output.turn_on: blue_led
         else:
           - output.turn_off: blue_led
+  # - interval: 10s
+  #   then:
+  #     - display.page.show_next: oled_display
+  #     - component.update: oled_display
 
 # Configure BME280 i2c sensor, define oversampling, and address.
 sensor:
@@ -123,6 +128,7 @@ sensor:
 # Calculate dew point
   - platform: template
     name: "3 Dew Point"
+    id: dew_point
     lambda: |-
       return (243.5*(log(id(bme280_humidity).state/100)+((17.67*id(bme280_temperature).state)/
       (243.5+id(bme280_temperature).state)))/(17.67-log(id(bme280_humidity).state/100)-
@@ -133,6 +139,7 @@ sensor:
 # Calculate MSLP
   - platform: template
     name: "5 Equivalent sea level pressure"
+    id: mslp
     lambda: |-
       const float STANDARD_ALTITUDE = 61; // in meters, see note
       return id(bme280_pressure).state / powf(1 - ((0.0065 * STANDARD_ALTITUDE) /
@@ -162,6 +169,7 @@ sensor:
 
   - platform: template
     name: "Heat Index Lookup"
+    id: heat_index
     lambda: |-
       // Define your Heat Index lookup table based on the corrected dataset
       const float heat_index_lookup[19][33] = {
@@ -199,7 +207,7 @@ sensor:
       float estimated_heat_index = heat_index_lookup[rh_index][temp_index];
       
       return estimated_heat_index;
-    update_interval: 60s
+    update_interval: 5s
 
 # Reports the WiFi signal strength/RSSI in dB
   - platform: wifi_signal 
@@ -228,3 +236,31 @@ text_sensor:
       name: Mac Wifi Address
     scan_results:
       name: Latest Scan Results
+
+display:
+  - platform: lcd_gpio
+    dimensions: 20x4
+    id: oled_display
+    user_characters:
+      - position: 0
+        data:
+          - 0b00110
+          - 0b01001
+          - 0b01001
+          - 0b00110
+          - 0b00000
+          - 0b00000
+          - 0b00000
+          - 0b00000
+    data_pins:
+      - 14
+      - 32
+      - 33
+      - 25
+    enable_pin: 26
+    rs_pin: 23
+    lambda: |-
+      // it.print(0,0,"Temp: ");
+      it.printf("%.1f\x08\C", id(bme280_temperature).state);
+      it.printf(0,1,"RH: %.1f%%", id(bme280_humidity).state);
+      it.printf(7,0,"HI: %.0f\x08\C", id(heat_index).state);
