@@ -1,0 +1,230 @@
+# Define constant variables for use throughout configuration
+substitutions:
+  name: "bme280"
+  friendly_name: "BME 280"
+  room: "Bedroom"
+  device_description: "BME280 based environmental sensor with DHT22 support"
+  project_name: "bme.sensor"
+  project_version: "1.0"
+
+# Set up device parameters
+esphome:
+  name: "${name}"
+  friendly_name: "${friendly_name}"
+  name_add_mac_suffix: false
+  project:
+    name: "${project_name}"
+    version: "${project_version}"
+
+# Configure device type and framework
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+  # logs:
+    # component: ERROR
+
+# Enable Home Assistant API
+api:
+  encryption:
+    # key: !secret bme_api
+    key: "bx2Gbs8/52PllLHnk7wqRmEaQz4gDJWxoGvw+GYJ3a8="
+
+# Enable OTA updates & create password
+ota:
+  # password: !secret bme_ota
+
+# Enable WiFi and passwords
+wifi:
+  networks:
+    # - ssid: !secret wifi_ssid
+    #   password: !secret wifi_password
+    # - ssid: "BielbyHome"
+    #   password: !secret wifi2_password
+    # - ssid: "Lyons WiFi"
+    #   password: !secret lyons_password
+    - ssid: "tcag"
+      password: "X10ten10"
+      # password: !secret tcag_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Bme280 Fallback Hotspot"
+    # password: !secret bme_ap
+
+  domain: .local
+  # manual_ip:
+  #   static_ip: !secret bme_ip
+  #   subnet: !secret subnet
+  #   gateway: !secret gateway
+  #   dns1: !secret dns1
+      
+  # use_address: 
+
+# Configure captive portal in case of no WiFi connection
+captive_portal:
+
+# Enable web server component
+web_server:
+  port: 80
+
+# Enable i2c and configure pins
+i2c:
+  sda: 21
+  scl: 22
+  scan: true
+
+# Register the blue LED as an output, and define gpio pin
+output:
+  - platform: gpio
+    id: blue_led
+    pin: 2
+    inverted: True  # Configure so LED is ON during boot, and is OFF when WiFi connected
+
+# Check to see if WiFi connected, and switch on the output for the blue LED
+interval:
+  - interval: 1s
+    then:
+      if:
+        condition:
+          wifi.connected:
+        then:
+          - output.turn_on: blue_led
+        else:
+          - output.turn_off: blue_led
+
+# Configure BME280 i2c sensor, define oversampling, and address.
+sensor:
+  - platform: bme280_i2c
+    temperature:
+      name: "0 Temperature"
+      oversampling: 16x
+      id: bme280_temperature
+    pressure:
+      name: "4 Atmostpheric Pressure"
+      id: bme280_pressure
+    humidity:
+      name: "Relative Humidity"
+      # id: bme280_humidity_raw
+      id: bme280_humidity
+    address: 0x77
+    update_interval: 15s
+    iir_filter: 16x
+
+# Enable absolute humidity calculation
+  - platform: absolute_humidity
+    name: "2 Absolute Humidity"
+    temperature: bme280_temperature
+    humidity: bme280_humidity
+
+# Calculate dew point
+  - platform: template
+    name: "3 Dew Point"
+    lambda: |-
+      return (243.5*(log(id(bme280_humidity).state/100)+((17.67*id(bme280_temperature).state)/
+      (243.5+id(bme280_temperature).state)))/(17.67-log(id(bme280_humidity).state/100)-
+      ((17.67*id(bme280_temperature).state)/(243.5+id(bme280_temperature).state))));
+    unit_of_measurement: °C
+    icon: 'mdi:thermometer-alert'
+
+# Calculate MSLP
+  - platform: template
+    name: "5 Equivalent sea level pressure"
+    lambda: |-
+      const float STANDARD_ALTITUDE = 61; // in meters, see note
+      return id(bme280_pressure).state / powf(1 - ((0.0065 * STANDARD_ALTITUDE) /
+        (id(bme280_temperature).state + (0.0065 * STANDARD_ALTITUDE) + 273.15)), 5.257); // in hPa
+    update_interval: 15s
+    unit_of_measurement: 'hPa'
+
+# FIlter values of the humidity sensor to provide calibration
+  # - platform: copy
+  #   source_id: bme280_humidity_raw
+  #   name: "1 Relative Humidity"
+  #   id: bme280_humidity
+  #   filters:
+  #       - calibrate_linear:
+  #           # method: exact
+  #           datapoints:
+  #             # - 0 -> 0
+  #             - 48 -> 55
+  #             - 49 -> 57
+  #             - 55.2 -> 64
+  #             - 86 -> 90
+  #       - exponential_moving_average:
+  #           alpha: 0.2
+  #           send_every: 5
+  #   unit_of_measurement: "%"
+  #   device_class: "humidity"
+
+  - platform: template
+    name: "Heat Index Lookup"
+    lambda: |-
+      // Define your Heat Index lookup table based on the corrected dataset
+      const float heat_index_lookup[19][33] = {
+      {18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 49, 50, 51},
+      {18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 40, 41, 42, 43, 45, 46, 47, 49, 50, 52, 53, 55},
+      {18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 36, 37, 38, 40, 41, 43, 44, 45, 47, 48, 50, 52, 53, 55, 56, 58},
+      {18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 32, 33, 34, 36, 37, 39, 40, 42, 43, 45, 46, 48, 49, 51, 53, 54, 56, 58, 60, 61},
+      {18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 29, 30, 31, 33, 34, 36, 37, 39, 40, 42, 43, 45, 47, 48, 50, 52, 53, 55, 57, 59, 61, 63, 65},
+      {18, 19, 20, 21, 22, 23, 24, 26, 27, 28, 29, 31, 33, 34, 36, 37, 39, 40, 42, 44, 45, 47, 49, 50, 52, 54, 56, 58, 60, 62, 64, 66, 68},
+      {18, 19, 20, 21, 22, 24, 25, 26, 28, 29, 31, 32, 34, 35, 37, 39, 41, 42, 44, 45, 47, 49, 51, 53, 54, 56, 58, 61, 63, 65, 67, 69, 72},
+      {18, 19, 20, 22, 23, 24, 26, 27, 29, 30, 32, 33, 35, 37, 38, 40, 42, 43, 45, 47, 49, 51, 53, 55, 57, 59, 61, 63, 65, 68, 70, 72, 75},
+      {18, 19, 21, 22, 24, 25, 27, 28, 30, 31, 33, 34, 36, 38, 40, 41, 43, 45, 47, 49, 51, 53, 55, 57, 59, 61, 63, 66, 68, 71, 73, 76, 78},
+      {19, 20, 22, 23, 24, 26, 27, 29, 31, 32, 34, 36, 37, 39, 41, 43, 45, 46, 48, 50, 52, 55, 57, 59, 61, 64, 66, 68, 71, 74, 76, 79, 82},
+      {19, 21, 22, 24, 25, 27, 28, 30, 32, 33, 35, 37, 38, 40, 42, 44, 46, 48, 50, 52, 54, 57, 59, 61, 64, 66, 68, 71, 74, 76, 79, 82, 85},
+      {20, 21, 23, 24, 26, 27, 29, 31, 32, 34, 36, 38, 40, 42, 43, 45, 47, 50, 52, 54, 56, 58, 61, 63, 66, 68, 71, 74, 77, 79, 82, 85, 89},
+      {20, 22, 23, 25, 27, 28, 30, 32, 33, 35, 37, 39, 41, 43, 45, 47, 49, 51, 53, 56, 58, 60, 63, 65, 68, 71, 73, 76, 79, 82, 85, 89, 92},
+      {21, 23, 24, 26, 27, 29, 31, 33, 34, 36, 38, 40, 42, 44, 46, 48, 50, 53, 55, 57, 60, 62, 65, 68, 70, 73, 76, 79, 82, 85, 89, 92, 95},
+      {22, 23, 25, 26, 28, 30, 32, 33, 35, 37, 39, 41, 43, 45, 47, 50, 52, 54, 57, 59, 62, 64, 67, 70, 73, 75, 79, 82, 85, 88, 92, 95, 99},
+      {22, 24, 25, 27, 29, 31, 32, 34, 36, 38, 40, 42, 44, 46, 49, 51, 53, 56, 58, 61, 63, 66, 69, 72, 75, 78, 81, 84, 88, 91, 95, 98, 102},
+      {23, 24, 26, 28, 30, 31, 33, 35, 37, 39, 41, 43, 45, 48, 50, 52, 55, 57, 60, 63, 65, 68, 71, 74, 77, 80, 84, 87, 90, 94, 98, 102, 106},
+      {23, 25, 27, 28, 30, 32, 34, 36, 38, 40, 42, 44, 47, 49, 51, 54, 56, 59, 62, 64, 67, 70, 73, 76, 79, 83, 86, 90, 93, 97, 101, 105, 109},
+      {24, 26, 27, 29, 31, 33, 35, 37, 39, 41, 43, 45, 48, 50, 53, 55, 58, 60, 63, 66, 69, 72, 75, 78, 82, 85, 89, 92, 96, 100, 104, 108, 112}
+      };
+
+      
+      float temperature = id(bme280_temperature).state;
+      float humidity = id(bme280_humidity).state;
+
+      // Convert the temperature and humidity to the appropriate indices
+      // (You'll need to adjust these based on your data's actual temperature and humidity ranges)
+      int temp_index = min(max(int((temperature - 18)), 0), 32); // Assuming temperature range starts at 18°C and increments by 1°C
+      int rh_index = min(max(int((humidity - 10) / 5), 0), 18);  // Assuming RH starts at 10% and increments by 5%
+
+      // Retrieve the Heat Index from the lookup table
+      float estimated_heat_index = heat_index_lookup[rh_index][temp_index];
+      
+      return estimated_heat_index;
+    update_interval: 60s
+
+# Reports the WiFi signal strength/RSSI in dB
+  - platform: wifi_signal 
+    name: "WiFi Signal dB"
+    id: wifi_signal_db
+    update_interval: 60s
+    entity_category: "diagnostic"
+
+# Reports the WiFi signal strength in %
+  - platform: copy 
+    source_id: wifi_signal_db
+    name: "WiFi Signal Percent"
+    filters:
+      - lambda: return min(max(2 * (x + 100.0), 0.0), 100.0);
+    unit_of_measurement: "Signal %"
+    entity_category: "diagnostic"
+    device_class: ""
+# Reports WiFi info, IP address, and WiFi scan results
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: IP Address
+    ssid:
+      name: Connected SSID
+    mac_address:
+      name: Mac Wifi Address
+    scan_results:
+      name: Latest Scan Results
